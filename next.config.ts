@@ -1,7 +1,17 @@
-import type { NextConfig } from "next";
+import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  turbopack: {
+    rules: {
+      // '*.css': {
+      //   loaders: [{loader: '@tailwindcss/webpack'}]
+      // },
+      '*.{ts,tsx}': {
+        loaders: [{loader: './manifest/loader.ts'}],
+        as: '*.tsx'
+      }
+    }
+  }
 };
 
 export default nextConfig;
