@@ -9,29 +9,28 @@ function isProjectFile(absolutePath: string): boolean {
   return normalized.includes(`${path.sep}src${path.sep}`) || normalized.endsWith(`${path.sep}src`);
 }
 
-export default async function traverse(
-  entryPath: string,
-  baseDir: string
-): Promise<ModuleNode> {
+export default async function traverse(entryPath: string): Promise<ModuleNode> {
   const visited = new Set<string>();
 
   async function visit(filePath: string, request: string): Promise<ModuleNode> {
     const normalized = path.normalize(filePath);
     if (visited.has(normalized)) {
-      return { path: normalized, request, imports: [] };
+      return { path: normalized, request, lines: 0, imports: [] };
     }
     visited.add(normalized);
 
     if (!isProjectFile(normalized)) {
-      return { path: normalized, request, imports: [] };
+      return { path: normalized, request, lines: 0, imports: [] };
     }
 
     let source: string;
     try {
       source = fs.readFileSync(normalized, 'utf-8');
     } catch {
-      return { path: normalized, request, imports: [] };
+      return { path: normalized, request, lines: 0, imports: [] };
     }
+
+    const lines = source.split('\n').length;
 
     const imports = extractImports(source);
     const context = path.dirname(normalized);
@@ -51,11 +50,10 @@ export default async function traverse(
     return {
       path: normalized,
       request,
+      lines,
       imports: children.filter((c): c is ModuleNode => c !== null),
     };
   }
 
-  const entryRequest =
-    path.relative(baseDir, entryPath) || path.basename(entryPath);
-  return visit(entryPath, entryRequest);
+  return visit(entryPath, path.normalize(entryPath));
 }

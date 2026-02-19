@@ -1,7 +1,8 @@
 export type ModuleNode = {
+  imports: Array<ModuleNode>;
+  lines: number;
   path: string;
   request: string;
-  imports: Array<ModuleNode>;
 };
 
 export type Manifest = {
