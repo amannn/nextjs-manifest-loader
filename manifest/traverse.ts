@@ -4,6 +4,12 @@ import extractImports from './parse-imports.ts';
 import resolve from './resolve.ts';
 import type { ModuleNode } from './types.ts';
 
+const JS_TS_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx']);
+
+function isJsOrTsFile(filePath: string): boolean {
+  return JS_TS_EXTS.has(path.extname(filePath));
+}
+
 function isProjectFile(absolutePath: string): boolean {
   const normalized = path.normalize(absolutePath);
   return normalized.includes(`${path.sep}src${path.sep}`) || normalized.endsWith(`${path.sep}src`);
@@ -32,7 +38,12 @@ export default async function traverse(entryPath: string): Promise<ModuleNode> {
 
     const lines = source.split('\n').length;
 
-    const imports = extractImports(source);
+    let imports: Array<string>;
+    try {
+      imports = extractImports(source);
+    } catch {
+      imports = [];
+    }
     const context = path.dirname(normalized);
 
     const resolved = await Promise.all(
@@ -42,7 +53,7 @@ export default async function traverse(entryPath: string): Promise<ModuleNode> {
     const children = await Promise.all(
       imports.map((req, i) => {
         const resolvedPath = resolved[i];
-        if (!resolvedPath) return Promise.resolve(null);
+        if (!resolvedPath || !isJsOrTsFile(resolvedPath)) return Promise.resolve(null);
         return visit(resolvedPath, req);
       })
     );
