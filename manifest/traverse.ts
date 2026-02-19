@@ -1,18 +1,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import extractImports from './parse-imports.ts';
+import {SOURCE_EXTENSIONS} from './config.ts';
+import parseImports from './parseImports.ts';
 import resolve from './resolve.ts';
-import type { ModuleNode } from './types.ts';
+import type {ModuleNode} from './types.ts';
 
-const JS_TS_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx']);
+const EXTENSIONS = new Set(SOURCE_EXTENSIONS);
 
 function isJsOrTsFile(filePath: string): boolean {
-  return JS_TS_EXTS.has(path.extname(filePath));
+  return EXTENSIONS.has(path.extname(filePath));
 }
 
 function isProjectFile(absolutePath: string): boolean {
   const normalized = path.normalize(absolutePath);
-  return normalized.includes(`${path.sep}src${path.sep}`) || normalized.endsWith(`${path.sep}src`);
+  return (
+    normalized.includes(`${path.sep}src${path.sep}`) ||
+    normalized.endsWith(`${path.sep}src`)
+  );
 }
 
 export default async function traverse(entryPath: string): Promise<ModuleNode> {
@@ -21,26 +25,26 @@ export default async function traverse(entryPath: string): Promise<ModuleNode> {
   async function visit(filePath: string, request: string): Promise<ModuleNode> {
     const normalized = path.normalize(filePath);
     if (visited.has(normalized)) {
-      return { path: normalized, request, lines: 0, imports: [] };
+      return {path: normalized, request, lines: 0, imports: []};
     }
     visited.add(normalized);
 
     if (!isProjectFile(normalized)) {
-      return { path: normalized, request, lines: 0, imports: [] };
+      return {path: normalized, request, lines: 0, imports: []};
     }
 
     let source: string;
     try {
       source = fs.readFileSync(normalized, 'utf-8');
     } catch {
-      return { path: normalized, request, lines: 0, imports: [] };
+      return {path: normalized, request, lines: 0, imports: []};
     }
 
     const lines = source.split('\n').length;
 
     let imports: Array<string>;
     try {
-      imports = extractImports(source);
+      imports = parseImports(source);
     } catch {
       imports = [];
     }
@@ -53,7 +57,8 @@ export default async function traverse(entryPath: string): Promise<ModuleNode> {
     const children = await Promise.all(
       imports.map((req, i) => {
         const resolvedPath = resolved[i];
-        if (!resolvedPath || !isJsOrTsFile(resolvedPath)) return Promise.resolve(null);
+        if (!resolvedPath || !isJsOrTsFile(resolvedPath))
+          return Promise.resolve(null);
         return visit(resolvedPath, req);
       })
     );
@@ -62,7 +67,7 @@ export default async function traverse(entryPath: string): Promise<ModuleNode> {
       path: normalized,
       request,
       lines,
-      imports: children.filter((c): c is ModuleNode => c !== null),
+      imports: children.filter((c): c is ModuleNode => c !== null)
     };
   }
 

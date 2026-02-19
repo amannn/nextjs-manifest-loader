@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
       // },
       '*.{ts,tsx}': {
         loaders: [{loader: './manifest/loader.ts'}],
+        condition: {
+          content: /\/\* inject \*\//
+        },
         as: '*.tsx'
       }
     }

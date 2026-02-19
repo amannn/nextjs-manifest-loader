@@ -18,6 +18,7 @@ export default async function manifestLoader(
   const callback = this.async();
 
   // Early exit if marker not found
+  // (but we do this in next.config.ts as well)
   if (!source.includes('/* inject */')) {
     callback(null, source);
     return;
@@ -33,8 +34,8 @@ export default async function manifestLoader(
       this.addDependency(p);
     }
 
-    const result = inject(source, manifest);
-    callback(null, result);
+    const {code, map} = inject(source, manifest, inputFile);
+    callback(null, code, map);
   } catch (error) {
     callback(error as Error);
   }
