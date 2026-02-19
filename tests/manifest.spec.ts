@@ -12,9 +12,13 @@ async function getManifest(page: Page) {
   return JSON.parse(text ?? '{}');
 }
 
-function flattenModules(nodes: Array<ModuleNode>): Array<ModuleNode> {
+function flattenModules(
+  nodes: Array<ModuleNode> | ModuleNode | undefined
+): Array<ModuleNode> {
+  if (!nodes) return [];
+  const arr = Array.isArray(nodes) ? nodes : [nodes];
   const result: Array<ModuleNode> = [];
-  for (const n of nodes) {
+  for (const n of arr) {
     result.push(n);
     result.push(...flattenModules(n.imports));
   }
@@ -225,11 +229,8 @@ test('manifest updates when import is removed', async ({page}) => {
     await page.goto('/');
     await page.reload();
     let manifest = await getManifest(page);
-    expect(
-      manifest.modules.some((m: {path: string}) =>
-        m.path.endsWith('Orphan.tsx')
-      )
-    ).toBe(true);
+    const flat = flattenModules(manifest.modules ?? []);
+    expect(flat.some((m) => m.path.endsWith('Orphan.tsx'))).toBe(true);
 
     fs.writeFileSync(pagePath, originalPage);
     fs.unlinkSync(orphanPath);
@@ -241,9 +242,8 @@ test('manifest updates when import is removed', async ({page}) => {
         async () => {
           await page.goto(`/?nocache=${Date.now()}`);
           const m = await getManifest(page);
-          return m.modules.some((x: {path: string}) =>
-            x.path.endsWith('Orphan.tsx')
-          );
+          const flat = flattenModules(m.modules ?? []);
+          return flat.some((x) => x.path.endsWith('Orphan.tsx'));
         },
         {intervals: [2000, 3000, 3000], timeout: 30000}
       )
