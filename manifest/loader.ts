@@ -2,8 +2,17 @@ import path from 'node:path';
 import type { LoaderContext } from 'webpack';
 import traverse from './traverse.ts';
 import inject from './inject.ts';
+import type { ModuleNode } from './types.ts';
 
 type LoaderOptions = { base?: string };
+
+function collectPaths(node: ModuleNode): Array<string> {
+  const paths = [node.path];
+  for (const child of node.imports) {
+    paths.push(...collectPaths(child));
+  }
+  return paths;
+}
 
 export default async function manifestLoader(
   this: LoaderContext<LoaderOptions>,
@@ -22,10 +31,10 @@ export default async function manifestLoader(
 
   try {
     const modules = await traverse(inputFile, base);
-    const manifest = { modules: [...modules] };
+    const manifest = { modules: [modules] };
 
-    for (const m of modules) {
-      this.addDependency(m.path);
+    for (const p of collectPaths(modules)) {
+      this.addDependency(p);
     }
 
     const result = inject(source, manifest);

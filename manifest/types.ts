@@ -1,8 +1,9 @@
-export type ModuleEntry = {
+export type ModuleNode = {
   path: string;
   request: string;
+  imports: Array<ModuleNode>;
 };
 
 export type Manifest = {
-  modules: Array<ModuleEntry>;
+  modules: Array<ModuleNode>;
 };

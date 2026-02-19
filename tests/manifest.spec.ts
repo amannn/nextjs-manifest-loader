@@ -3,6 +3,8 @@ import path from 'node:path';
 import {expect, test} from '@playwright/test';
 import type {Page} from '@playwright/test';
 
+type ModuleNode = { imports: Array<ModuleNode>; path: string; request: string };
+
 async function getManifest(page: Page) {
   const pre = page.locator('pre');
   await expect(pre).toBeVisible();
@@ -10,14 +12,22 @@ async function getManifest(page: Page) {
   return JSON.parse(text ?? '{}');
 }
 
+function flattenModules(nodes: Array<ModuleNode>): Array<ModuleNode> {
+  const result: Array<ModuleNode> = [];
+  for (const n of nodes) {
+    result.push(n);
+    result.push(...flattenModules(n.imports));
+  }
+  return result;
+}
+
 test('manifest contains Test module on initial compilation', async ({page}) => {
   await page.goto('/');
   const manifest = await getManifest(page);
   expect(manifest.modules).toBeDefined();
   expect(Array.isArray(manifest.modules)).toBe(true);
-  const hasTest = manifest.modules.some((m: {path: string}) =>
-    m.path.endsWith('Test.tsx')
-  );
+  const flat = flattenModules(manifest.modules);
+  const hasTest = flat.some((m) => m.path.endsWith('Test.tsx'));
   expect(hasTest).toBe(true);
 });
 
@@ -46,7 +56,8 @@ test('manifest updates when new import is added', async ({page}) => {
     await page.goto('/');
     await page.reload();
     const manifest = await getManifest(page);
-    const hasNewComponent = manifest.modules?.some((m: {path: string}) =>
+    const flat = flattenModules(manifest.modules ?? []);
+    const hasNewComponent = flat.some((m) =>
       m.path.endsWith('NewComponent.tsx')
     );
     expect(hasNewComponent).toBe(true);
@@ -61,10 +72,29 @@ test('manifest includes transitive imports (page -> Test -> Another)', async ({
 }) => {
   await page.goto('/');
   const manifest = await getManifest(page);
-  const paths = manifest.modules.map((m: {path: string}) => m.path);
-  expect(paths.some((p: string) => p.endsWith('page.tsx'))).toBe(true);
-  expect(paths.some((p: string) => p.endsWith('Test.tsx'))).toBe(true);
-  expect(paths.some((p: string) => p.endsWith('Another.tsx'))).toBe(true);
+  const flat = flattenModules(manifest.modules);
+  const paths = flat.map((m) => m.path);
+  expect(paths.some((p) => p.endsWith('page.tsx'))).toBe(true);
+  expect(paths.some((p) => p.endsWith('Test.tsx'))).toBe(true);
+  expect(paths.some((p) => p.endsWith('Another.tsx'))).toBe(true);
+});
+
+test('manifest has hierarchical structure (Test nested under page)', async ({
+  page
+}) => {
+  await page.goto('/');
+  const manifest = await getManifest(page);
+  const root = manifest.modules?.[0];
+  expect(root).toBeDefined();
+  expect(root.path).toMatch(/page\.tsx$/);
+  const testChild = root.imports?.find((m: ModuleNode) =>
+    m.path.endsWith('Test.tsx')
+  );
+  expect(testChild).toBeDefined();
+  const anotherChild = testChild?.imports?.find((m: ModuleNode) =>
+    m.path.endsWith('Another.tsx')
+  );
+  expect(anotherChild).toBeDefined();
 });
 
 test('manifest excludes type-only imports', async ({page}) => {
@@ -88,9 +118,8 @@ test('manifest excludes type-only imports', async ({page}) => {
     await page.goto('/');
     await page.reload();
     const manifest = await getManifest(page);
-    expect(
-      manifest.modules.some((m: {path: string}) => m.path.endsWith('types.ts'))
-    ).toBe(false);
+    const flat = flattenModules(manifest.modules ?? []);
+    expect(flat.some((m) => m.path.endsWith('types.ts'))).toBe(false);
   } finally {
     fs.unlinkSync(typesPath);
     fs.writeFileSync(pagePath, originalPage);
@@ -121,21 +150,32 @@ test('manifest handles circular imports without hanging', async ({page}) => {
     await page.goto('/');
     await page.reload();
     const manifest = await getManifest(page);
-    expect(
-      manifest.modules.some((m: {path: string}) =>
-        m.path.endsWith('CycleA.tsx')
-      )
-    ).toBe(true);
-    expect(
-      manifest.modules.some((m: {path: string}) =>
-        m.path.endsWith('CycleB.tsx')
-      )
-    ).toBe(true);
+    const flat = flattenModules(manifest.modules ?? []);
+    expect(flat.some((m) => m.path.endsWith('CycleA.tsx'))).toBe(true);
+    expect(flat.some((m) => m.path.endsWith('CycleB.tsx'))).toBe(true);
   } finally {
     fs.unlinkSync(cycleAPath);
     fs.unlinkSync(cycleBPath);
     fs.writeFileSync(pagePath, originalPage);
   }
+});
+
+test('manifest excludes node_modules', async ({page}) => {
+  await page.goto('/');
+  const manifest = await getManifest(page);
+  const flat = flattenModules(manifest.modules ?? []);
+  const hasNodeModules = flat.some((m) => m.path.includes('node_modules'));
+  expect(hasNodeModules).toBe(false);
+});
+
+test('manifest includes request field on each node', async ({page}) => {
+  await page.goto('/');
+  const manifest = await getManifest(page);
+  const flat = flattenModules(manifest.modules ?? []);
+  const testNode = flat.find((m) => m.path.endsWith('Test.tsx'));
+  expect(testNode).toBeDefined();
+  expect(testNode?.request).toBeDefined();
+  expect(typeof testNode?.request).toBe('string');
 });
 
 test('manifest handles unresolvable import gracefully', async ({page}) => {
@@ -157,9 +197,8 @@ test('manifest handles unresolvable import gracefully', async ({page}) => {
     await page.reload();
     const manifest = await getManifest(page);
     expect(manifest.modules).toBeDefined();
-    expect(
-      manifest.modules.some((m: {path: string}) => m.path.endsWith('Test.tsx'))
-    ).toBe(true);
+    const flat = flattenModules(manifest.modules ?? []);
+    expect(flat.some((m) => m.path.endsWith('Test.tsx'))).toBe(true);
   } finally {
     fs.writeFileSync(pagePath, originalPage);
   }
