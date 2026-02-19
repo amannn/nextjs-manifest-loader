@@ -195,16 +195,18 @@ test('manifest updates when import is removed', async ({page}) => {
     fs.writeFileSync(pagePath, originalPage);
     fs.unlinkSync(orphanPath);
 
-    await page.goto('/');
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     await expect
       .poll(
         async () => {
+          await page.goto(`/?nocache=${Date.now()}`);
           const m = await getManifest(page);
           return m.modules.some((x: {path: string}) =>
             x.path.endsWith('Orphan.tsx')
           );
         },
-        {timeout: 15000}
+        {intervals: [1000, 2000, 2000], timeout: 20000}
       )
       .toBe(false);
   } finally {
