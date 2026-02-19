@@ -199,6 +199,7 @@ test('manifest updates when import is removed', async ({page}) => {
     await expect
       .poll(
         async () => {
+          await page.reload();
           const m = await getManifest(page);
           return m.modules.some((x: {path: string}) =>
             x.path.endsWith('Orphan.tsx')
