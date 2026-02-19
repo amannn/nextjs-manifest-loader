@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import extractImports from './parse-imports.ts';
 import resolve from './resolve.ts';
-import type { ModuleEntry } from './types.ts';
+import type { ModuleNode } from './types.ts';
 
 function isProjectFile(absolutePath: string): boolean {
   const normalized = path.normalize(absolutePath);
@@ -12,24 +12,25 @@ function isProjectFile(absolutePath: string): boolean {
 export default async function traverse(
   entryPath: string,
   baseDir: string
-): Promise<Set<ModuleEntry>> {
+): Promise<ModuleNode> {
   const visited = new Set<string>();
-  const modules = new Map<string, ModuleEntry>();
 
-  async function visit(filePath: string, request: string): Promise<void> {
+  async function visit(filePath: string, request: string): Promise<ModuleNode> {
     const normalized = path.normalize(filePath);
-    if (visited.has(normalized)) return;
+    if (visited.has(normalized)) {
+      return { path: normalized, request, imports: [] };
+    }
     visited.add(normalized);
 
-    if (!isProjectFile(normalized)) return;
-
-    modules.set(normalized, { path: normalized, request });
+    if (!isProjectFile(normalized)) {
+      return { path: normalized, request, imports: [] };
+    }
 
     let source: string;
     try {
       source = fs.readFileSync(normalized, 'utf-8');
     } catch {
-      return;
+      return { path: normalized, request, imports: [] };
     }
 
     const imports = extractImports(source);
@@ -39,16 +40,22 @@ export default async function traverse(
       imports.map((req) => resolve(context, req))
     );
 
-    await Promise.all(
+    const children = await Promise.all(
       imports.map((req, i) => {
         const resolvedPath = resolved[i];
-        if (!resolvedPath) return Promise.resolve();
+        if (!resolvedPath) return Promise.resolve(null);
         return visit(resolvedPath, req);
       })
     );
+
+    return {
+      path: normalized,
+      request,
+      imports: children.filter((c): c is ModuleNode => c !== null),
+    };
   }
 
-  await visit(entryPath, path.relative(baseDir, entryPath) || path.basename(entryPath));
-
-  return new Set(modules.values());
+  const entryRequest =
+    path.relative(baseDir, entryPath) || path.basename(entryPath);
+  return visit(entryPath, entryRequest);
 }
