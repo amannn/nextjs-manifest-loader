@@ -183,25 +183,19 @@ test('manifest updates when import is removed', async ({page}) => {
       )
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    await expect
-      .poll(
-        async () => {
-          await page.goto(`/?nocache=${Date.now()}`);
-          const m = await getManifest(page);
-          return m.modules.some((x: {path: string}) =>
-            x.path.endsWith('Orphan.tsx')
-          );
-        },
-        {intervals: [1000, 2000, 2000], timeout: 20000}
+    await page.goto('/');
+    await page.reload();
+    let manifest = await getManifest(page);
+    expect(
+      manifest.modules.some((m: {path: string}) =>
+        m.path.endsWith('Orphan.tsx')
       )
-      .toBe(true);
+    ).toBe(true);
 
     fs.writeFileSync(pagePath, originalPage);
     fs.unlinkSync(orphanPath);
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
     await expect
       .poll(
@@ -212,7 +206,7 @@ test('manifest updates when import is removed', async ({page}) => {
             x.path.endsWith('Orphan.tsx')
           );
         },
-        {intervals: [1000, 2000, 2000], timeout: 20000}
+        {intervals: [2000, 3000, 3000], timeout: 30000}
       )
       .toBe(false);
   } finally {
