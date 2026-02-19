@@ -12,9 +12,13 @@ async function getManifest(page: Page) {
   return JSON.parse(text ?? '{}');
 }
 
-function flattenModules(nodes: Array<ModuleNode>): Array<ModuleNode> {
+function flattenModules(
+  nodes: Array<ModuleNode> | ModuleNode | undefined
+): Array<ModuleNode> {
+  if (!nodes) return [];
+  const arr = Array.isArray(nodes) ? nodes : [nodes];
   const result: Array<ModuleNode> = [];
-  for (const n of nodes) {
+  for (const n of arr) {
     result.push(n);
     result.push(...flattenModules(n.imports));
   }
@@ -200,6 +204,56 @@ test('manifest handles unresolvable import gracefully', async ({page}) => {
     const flat = flattenModules(manifest.modules ?? []);
     expect(flat.some((m) => m.path.endsWith('Test.tsx'))).toBe(true);
   } finally {
+    fs.writeFileSync(pagePath, originalPage);
+  }
+});
+
+test('manifest updates when import is removed', async ({page}) => {
+  const appDir = path.join(process.cwd(), 'src', 'app');
+  const orphanPath = path.join(appDir, 'Orphan.tsx');
+  const pagePath = path.join(appDir, 'page.tsx');
+
+  const orphanContent = `export default function Orphan() { return <span>Orphan</span>; }\n`;
+  const originalPage = fs.readFileSync(pagePath, 'utf-8');
+
+  try {
+    fs.writeFileSync(orphanPath, orphanContent);
+    fs.writeFileSync(
+      pagePath,
+      originalPage.replace(
+        "import Test from './Test';",
+        "import Test from './Test';\nimport Orphan from './Orphan';"
+      )
+    );
+
+    await page.goto('/');
+    await page.reload();
+    let manifest = await getManifest(page);
+    const flat = flattenModules(manifest.modules ?? []);
+    expect(flat.some((m) => m.path.endsWith('Orphan.tsx'))).toBe(true);
+
+    fs.writeFileSync(pagePath, originalPage);
+    fs.unlinkSync(orphanPath);
+
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    await expect
+      .poll(
+        async () => {
+          await page.goto(`/?nocache=${Date.now()}`);
+          const m = await getManifest(page);
+          const flat = flattenModules(m.modules ?? []);
+          return flat.some((x) => x.path.endsWith('Orphan.tsx'));
+        },
+        {intervals: [2000, 3000, 3000], timeout: 30000}
+      )
+      .toBe(false);
+  } finally {
+    try {
+      fs.unlinkSync(orphanPath);
+    } catch {
+      /* already deleted */
+    }
     fs.writeFileSync(pagePath, originalPage);
   }
 });
