@@ -164,3 +164,55 @@ test('manifest handles unresolvable import gracefully', async ({page}) => {
     fs.writeFileSync(pagePath, originalPage);
   }
 });
+
+test('manifest updates when import is removed', async ({page}) => {
+  const appDir = path.join(process.cwd(), 'src', 'app');
+  const orphanPath = path.join(appDir, 'Orphan.tsx');
+  const pagePath = path.join(appDir, 'page.tsx');
+
+  const orphanContent = `export default function Orphan() { return <span>Orphan</span>; }\n`;
+  const originalPage = fs.readFileSync(pagePath, 'utf-8');
+
+  try {
+    fs.writeFileSync(orphanPath, orphanContent);
+    fs.writeFileSync(
+      pagePath,
+      originalPage.replace(
+        "import Test from './Test';",
+        "import Test from './Test';\nimport Orphan from './Orphan';"
+      )
+    );
+
+    await page.goto('/');
+    await page.reload();
+    let manifest = await getManifest(page);
+    expect(
+      manifest.modules.some((m: {path: string}) =>
+        m.path.endsWith('Orphan.tsx')
+      )
+    ).toBe(true);
+
+    fs.writeFileSync(pagePath, originalPage);
+    fs.unlinkSync(orphanPath);
+
+    await page.goto('/');
+    await expect
+      .poll(
+        async () => {
+          const m = await getManifest(page);
+          return m.modules.some((x: {path: string}) =>
+            x.path.endsWith('Orphan.tsx')
+          );
+        },
+        {timeout: 15000}
+      )
+      .toBe(false);
+  } finally {
+    try {
+      fs.unlinkSync(orphanPath);
+    } catch {
+      /* already deleted */
+    }
+    fs.writeFileSync(pagePath, originalPage);
+  }
+});
